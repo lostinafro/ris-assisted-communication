@@ -2,39 +2,29 @@
 # filename "nodes.py"
 
 import numpy as np
+from scenario.common import spher2cart, cart2spher
 from scipy.constants import speed_of_light
 
-import matplotlib.pyplot as plt
 
 
 class Node:
-    """Creates a communication entity.
-
-    Arguments
-    ---------
-        n : int
-            Number of nodes.
-
-        pos : ndarray of shape (n, 3) or (3,) if n = 1
-          Position of the node in rectangular coordinates.
-
-        gain : float
-            Antenna gain of the node.
-
-        max_pow : float
-         Max power available on transmission in linear scale.
-    """
-
-    def __init__(
-            self,
-            n: int,
-            pos: np.ndarray,
-            gain: float or np.ndarray = None,
-            max_pow: float or np.ndarray = None,
-    ):
+    """Construct a communication entity."""
+    def __init__(self,
+                 n: int,
+                 pos: np.ndarray,
+                 gain: float or np.ndarray = None,
+                 max_pow: float or np.ndarray = None):
+        """
+        Parameters
+        ---------
+        :param n: int, number of nodes to place
+        :param pos: ndarray of shape (n,3), position of the node in rectangular coordinates.
+        :param gain : float, antenna gain of the node.
+        :param max_pow : float, max power available on transmission in linear scale.
+        """
 
         # Control on INPUT
-        if pos.shape != (n, 3) and pos.shape != (3, ):
+        if pos.shape != (n, 3):
             raise ValueError(f'Illegal positioning: for Node, pos.shape must be ({n}, 3), instead it is {pos.shape}')
 
         # Set attributes
@@ -45,213 +35,193 @@ class Node:
 
 
 class BS(Node):
-    """Base station.
+    """Base station class"""
 
-    Arguments
-    ---------
-        pos : ndarray of shape (3,)
-            Position of the BS in rectangular coordinates.
-
-        gain : float
-            BS antenna gain. Default is 5.00 dB.
-
-        max_pow : float
-            BS max power. Default is 30 dBm.
-    """
-
-    def __init__(
-            self,
-            n: int = None,
-            pos: np.ndarray = None,
-            gain: float = None,
-            max_pow: float = None,
-    ):
+    def __init__(self,
+                 n: int = None,
+                 pos: np.ndarray = None,
+                 gain: float = None,
+                 max_pow: float = None):
+        """
+        Parameters
+        ---------
+        :param n: number of BS.
+        :param pos: ndarray of shape (n,3), position of the BS in rectangular coordinates.
+        :param gain: float, BS antenna gain. Default is 13.85 dB.
+        :param max_pow : float, BS max power. Default is 46 dBm.
+        """
         if n is None:
             n = 1
         if gain is None:
-            gain = 10**(5/10)
+            gain = 12.85    # [dB]
         if max_pow is None:
-            max_pow = 100  # [mW]
+            max_pow = 46  # [dBm]
 
         # Init parent class
         super().__init__(n, pos, gain, max_pow)
 
-        self.distance = np.linalg.norm(self.pos)
-        self.angle = np.abs(np.arctan2(self.pos[0], self.pos[1]))
+        # Spherical coordinate from the origin
+        self.distance = np.linalg.norm(self.pos, axis=-1)
+        self.az_angle = np.arctan2(self.pos[:, 1], self.pos[:, 0])
+        self.el_angle = np.arccos(self.pos[:, 2] / self.distance)
 
     def __repr__(self):
         return f'BS-{self.n}'
 
 
 class UE(Node):
-    """User.
-
-    Arguments
-    ---------
-        n : int
-            Number of UEs.
-
-        pos : ndarray of shape (n, 3)
-            Position of the UEs in rectangular coordinates.
-
-        gain : float
-            BS antenna gain. Default is 5.00 dB.
-
-        max_pow : float
-            BS max power. Default is 30 dBm.
+    """User class
     """
 
-    def __init__(
-            self,
-            n: int,
-            pos: np.ndarray,
-            gain: float = None,
-            max_pow: float = None,
-    ):
-
+    def __init__(self,
+                 n: int,
+                 pos: np.ndarray,
+                 gain: float = None,
+                 max_pow: float = None):
+        """
+        Parameters
+        ---------
+        :param n: number of UE.
+        :param pos: ndarray of shape (n,3), position of the BS in rectangular coordinates.
+        :param gain: float, BS antenna gain. Default is 2.15 dB.
+        :param max_pow : float, BS max power. Default is 23 dBm.
+        """
         if gain is None:
-            gain = 10**(5/10)
+            gain = 2.15     # [dB]
         if max_pow is None:
-            max_pow = 10  # [mW]
+            max_pow = 23  # [dBm]
 
         # Init parent class
         super().__init__(n, pos, gain, max_pow)
 
-        self.distances = np.linalg.norm(self.pos, axis=-1)
-        self.angles = np.abs(np.arctan2(self.pos[:, 0], self.pos[:, 1]))
+        # Spherical coordinate from the origin
+        self.distance = np.linalg.norm(self.pos, axis=-1)
+        self.az_angle = np.arctan2(self.pos[:, 1], self.pos[:, 0])
+        self.el_angle = np.arccos(self.pos[:, 2] / self.distance)
 
     def __repr__(self):
         return f'UE-{self.n}'
 
 
 class RIS(Node):
-    """Reflective Intelligent Surface.
+    """Reflective Intelligent Surface class"""
 
-    Arguments
-    ---------
-        pos : ndarray of shape (3,)
-            Position of the RIS in rectangular coordinates.
-
-        num_els_z : int
-            Number of elements along z-axis.
-
-        num_els_x : int
-            Number of elements along x-axis.
-
-        wavelength : float
-            Wavelength in meters. Default: assume carrier frequency of 3 GHz.
-
-        size_el : float
-            Size of each element. Default: wavelength/4
-
-        num_configs : int
-            Number of configurations.
-    """
-
-    def __init__(
-            self,
-            n: int = None,
-            pos: np.ndarray = None,
-            num_els_z: int = None,
-            num_els_x: int = None,
-            wavelength: float = None,
-            size_el: float = None,
-            num_configs: int = None,
-
-    ):
+    def __init__(self,
+                 n: int,
+                 pos: np.ndarray,
+                 num_els_h: int,
+                 dist_els_h: float,
+                 num_els_v: int = None,
+                 dist_els_v: float = None):
+        """
+        Parameters
+        ---------
+        :param n: number of RIS to consider # TODO: not all methods works for multi-RIS environment
+        :param pos: ndarray of shape (n, 3), position of the RIS in rectangular coordinates.
+        :param num_els_v: int, number of elements along z-axis.
+        :param num_els_h: int, number of elements along x-axis.
+        :param dist_els_v: float, size of each element.
+        """
         # Default values
-        if n is None:
-            n = 1
-        if pos is None:
-            pos = np.array([0, 0, 0])
-        if num_els_z is None:
-            num_els_z = 10
-        if num_els_x is None:
-            num_els_x = 10
-        if wavelength is None:
-            carrier_frequency = 3e9
-            wavelength = speed_of_light / carrier_frequency
-        if size_el is None:
-            size_el = wavelength
-        if num_configs is None:
-            num_configs = 4
+        if num_els_v is None:
+            num_els_v = num_els_h
+        if dist_els_v is None:
+            dist_els_v = dist_els_h
 
-
-        # Initialize the parent, considering that the antenna gain of the ris is 0.0,
-        # max_pow and noise_power are -np.inf,
-        # the number of antenna is the number or RIS elements
+        # Initialize the parent, having zero gain, max_pow is -np.inf,
         super().__init__(n, pos, 0.0, -np.inf)
-        # In this way every ris instantiated is equal to the others
 
         # Instance variables
-        self.num_els_z = num_els_z  # vertical number of elements
-        self.num_els_x = num_els_x  # horizontal number of elements
-        self.num_els = num_els_z * num_els_x  # total number of elements
-        self.size_el = wavelength
-        self.num_configs = num_configs  # number of configurations
-
-        # # Store index of elements considering total number
-        # self.els_range = np.arange(self.num_els)
+        self.num_els = num_els_v * num_els_h  # total number of elements
+        self.num_els_h = num_els_h  # horizontal number of elements
+        self.num_els_v = num_els_v  # vertical number of elements
+        self.dist_els_h = dist_els_h
+        self.dist_els_v = dist_els_v
 
         # Compute RIS sizes
-        self.size_z = num_els_z * self.size_el  # vertical size [m]
-        self.size_x = num_els_x * self.size_el  # horizontal size [m]
-        self.area = self.size_z * self.size_x   # area [m^2]
+        self.size_h = num_els_h * self.dist_els_h  # horizontal size [m]
+        self.size_v = num_els_v * self.dist_els_v  # vertical size [m]
+        self.area = self.size_v * self.size_h   # area [m^2]
 
-        # # Organizing elements over the RIS
-        # self.id_els = self.indexing_els()
-        # self.pos_els = self.positioning_els()
+        # Element positioning
+        self.m = np.tile(1 + np.arange(self.num_els_h), (self.num_els_v,))
+        self.n = np.repeat(1 + np.arange(self.num_els_v), (self.num_els_h,))
+        self.el_pos = np.vstack((self.dist_els_h * (self.m - (self.num_els_h + 1) / 2), np.zeros(self.num_els), self.dist_els_v * (self.n - (self.num_els_v + 1) / 2)))
 
         # Configure RIS
+        self.actual_conf = np.ones(self.num_els)    # initialized with attenuation and phase 0
+        self.std_configs = None
+        self.num_std_configs = None
+        self.std_config_angles = None
+        self.std_config_limits_plus = None
+        self.std_config_limits_minus = None
         self.angular_resolution = None
-        self.set_angular_resolution()
 
-        self.configs = None
-        self.set_configurations()
+    def ff_dist(self, wavelength):
+        return 2 / wavelength * max(self.size_h, self.size_v) ** 2
 
-    def set_angular_resolution(self):
-        """Set RIS angular resolution. The observation space is ever considered to be 0 to pi/2 (half-plane) given our
-        system setup.
 
-        Returns
-        -------
-        angular_resolution : float
-            RIS angular resolution in radians given the number of configurations and uniform division of the observation
-            space.
+    def init_std_configurations(self, wavelength: float):
+        """Set configurations offered by the RIS having a coverage of -3dB beamwidth on all direction from 0 to 180 degree
 
-        Example
-        -------
-        For num_configs = 4, angular_resolution evaluates to pi/8.
-
+        :returns set_configs : ndarray, discrete set of configurations containing all possible angles (theta_s) in radians in which the RIS can steer the incoming signal.
         """
-        self.angular_resolution = ((np.pi / 2) - 0) / self.num_configs
+        a = 1.391
+        self.num_std_configs = int(np.ceil(self.num_els_h * self.dist_els_h * np.pi / wavelength / a))
+        self.std_configs = 1 - (2 * np.arange(1, self.num_std_configs + 1) - 1) * wavelength * a / self.num_els_h / self.dist_els_h / np.pi
+        self.std_config_limits_plus = 1 - (2 * np.arange(1, self.num_std_configs + 1)) * wavelength * a / self.num_els_h / self.dist_els_h / np.pi
+        self.std_config_limits_minus = 1 - (2 * np.arange(1, self.num_std_configs + 1) - 2) * wavelength * a / self.num_els_h / self.dist_els_h / np.pi
+        self.std_config_angles = np.arccos(self.std_configs)
 
-    def set_configurations(self):
-        """Set configurations offered by the RIS.
+    def array_factor(self, pos_transmitters: np.array, pos_receivers: np.array):
+        pass
 
-        Returns
-        -------
-        set_configs : ndarray of shape (self.num_configs,)
-            Discrete set of configurations containing all possible angles (theta_s) in radians in which the RIS can
-            steer the incoming signal.
+    def set_std_configuration(self, wavenumber, index, bs_pos: np.array = np.array([0, 10, 0])):
+        """Create the phase profile from codebook compensating the bs position and assuming attenuation 0"""
+        # compensating bs
+        bs_pos_spher = cart2spher(bs_pos)
+        phase_bs_h = np.cos(bs_pos_spher[:, 2]) * np.sin(bs_pos_spher[:, 1])
+        phase_bs_v = np.cos(bs_pos_spher[:, 1])
+        # Set standard configuration
+        phase_c_h = self.std_configs[index]
+        phase_c_v = 0
+        # Put all together
+        self.actual_conf = np.exp(1j * wavenumber * (- self.m * self.dist_els_h * (phase_c_h + phase_bs_h) - self.n * self.dist_els_v * (phase_c_v + phase_bs_v)))
+        return self.actual_conf
 
-        Example
-        -------
-        For S = 4, angular resolution is pi/8. The set of configurations evaluates to:
-
-                                 set_configs = [1/2, 3/2, 5/2, 7/2] * pi/8
-
-        0 and pi/2 are not included. Note that the observation space is divided into 5 zones.
-        """
-        configs = np.arange(self.angular_resolution / 2, np.pi / 2, self.angular_resolution)
-
-        assert len(configs) == self.num_configs, "Cardinality of configurations does not meet the number of configurations!"
-
-        self.configs = configs
+    def set_configuration(self, wavenumber, angle, bs_pos: np.array = np.array([0, 10, 0])):
+        """Create the phase profile from codebook compensating the bs position and assuming attenuation 0"""
+        # compensating bs
+        bs_pos_spher = cart2spher(bs_pos)
+        phase_bs_h = np.cos(bs_pos_spher[:, 2]) * np.sin(bs_pos_spher[:, 1])
+        phase_bs_v = np.cos(bs_pos_spher[:, 1])
+        # Set specific configuration
+        phase_c_h = np.cos(angle)
+        phase_c_v = 0
+        # Put all together
+        self.actual_conf = np.exp(1j * wavenumber * (- self.m * self.dist_els_h * (phase_c_h + phase_bs_h) - self.n * self.dist_els_v * (phase_c_v + phase_bs_v)))
+        return self.actual_conf
 
     def __repr__(self):
         return f'RIS-{self.n}'
 
+
+    # def set_angular_resolution(self):
+    #     """Set RIS angular resolution. The observation space is ever considered to be 0 to pi/2 (half-plane) given our
+    #     system setup.
+    #
+    #     Returns
+    #     -------
+    #     angular_resolution : float
+    #         RIS angular resolution in radians given the number of configurations and uniform division of the observation
+    #         space.
+    #
+    #     Example
+    #     -------
+    #     For num_configs = 4, angular_resolution evaluates to pi/8.
+    #
+    #     """
+    #     self.angular_resolution = ((np.pi / 2) - 0) / self.num_configs
 
     # def indexing_els(self):
     #     """Define an array of tuples where each entry represents the ID of an element.
