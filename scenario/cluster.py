@@ -3,7 +3,7 @@
 
 import numpy as np
 import scenario.common as common
-from scenario.common import cluster_shapes, circular_uniform, semicircular_uniform, cyl2cart, cart2cyl, fading
+from scenario.common import cluster_shapes, circular_uniform, semicircular_uniform, cyl2cart, cart2cyl, fading, db2lin
 from scenario.nodes import UE, BS, RIS
 import matplotlib.pyplot as plt
 from collections import OrderedDict
@@ -25,7 +25,7 @@ class Cluster:
                  direct_channel: str = 'LoS',
                  reflective_channel: str = 'LoS',
                  pl_exponent: float = 2,
-                 frequencies: int = 1,
+                 rbs: int = 1,
                  symbols: int = 1,
                  rng: np.random.RandomState = None):
 
@@ -57,10 +57,12 @@ class Cluster:
         self.pl_exponent = pl_exponent
 
         # Bandwidth available
-        self.fc = carrier_frequency
+        self.f0 = carrier_frequency
         self.wavelength = speed_of_light / carrier_frequency
         self.wavenumber = 2 * np.pi / self.wavelength
-        self.bw = bandwidth
+        self.BW = bandwidth
+        self.RBs = rbs
+        self.freqs = self.f0 + self.BW * np.arange(self.RBs)
 
         # Random State generator
         self.rng = np.random.RandomState() if rng is None else rng
@@ -75,6 +77,10 @@ class Cluster:
         self.h_ris = None
         # TODO: transform the following into an attribute of ris class
         self.ris_array_factor = None
+
+    @property
+    def wavelengths(self) -> np.array:
+        return speed_of_light / self.freqs
 
     def random_positioning(self, n: int):
         """Generate n positions in cartesian coordinate depending on the shape.
@@ -266,34 +272,40 @@ class Cluster:
 
     def build_channels(self):
         """Build channels depending"""
+        # TODO: control for input using try for the various cases
+        # TODO: SIONNA.
         # Common values
         gain = self.bs.gain + self.ue.gain
         # Direct channel
-        d_bu = np.linalg.norm(self.bs.pos - self.ue.pos, axis=1)
+        d_bu = np.linalg.norm(self.bs.pos - self.ue.pos, axis=1)[np.newaxis]
         # Path loss
         pl_bu = 20 * np.log10(4 * np.pi / self.wavelength) - gain + 10 * self.pl_exponent * np.log10(d_bu)
-        fad = fading(typ=self.direct_channel, dim=pl_bu.shape)
-        self.h_dir = fad * np.sqrt(10 ** (-pl_bu / 10)) * np.exp(- 1j * self.wavenumber * d_bu)
+        # TODO: create a function with all the pl computations
+        large_fad_bu = np.tile(db2lin(-pl_bu), (self.RBs, 1))
+        small_fad_bu = fading(typ=self.direct_channel, dim=(self.RBs, self.ue.n))
+        phase_shift_bu = 2 * np.pi / speed_of_light * self.freqs[np.newaxis].T @ d_bu
+        self.h_dir = small_fad_bu * np.sqrt(large_fad_bu) * np.exp(- 1j * phase_shift_bu)
 
         # reflective channel
         d_br = np.linalg.norm(self.bs.pos - self.ris.pos, axis=1)
-        d_ru = np.linalg.norm(self.ris.pos - self.ue.pos, axis=1)
+        d_ru = np.linalg.norm(self.ris.pos - self.ue.pos, axis=1)[np.newaxis]
         # Path loss
         pl_ru = 20 * np.log10(4 * np.pi) - gain - 20 * np.log10(self.ris.dist_els_h * self.ris.dist_els_v) + 20 * np.log10(d_br * d_ru)
-        # TODO: what happens if RIS is not in the origins?
+        # TODO: what happens if RIS is not in the origins? There is the rotation matrix!
         # positioning versors
         r_k = (self.ue.pos.T/d_ru).T    # transpose operation needed to obtain K x 3 vector
         r_b = (self.bs.pos.T/d_br).T    # transpose operation needed to obtain B x 3 vector
         # phases
-        pos_factor = np.sin(self.ue.az_angle) * np.sin(self.bs.el_angle)
-        delta_psi_ue = - self.wavenumber * (d_ru[np.newaxis].T - r_k @ self.ris.el_pos)
-        delta_psi_bs = - self.wavenumber * (d_br - r_b @ self.ris.el_pos)
+        pos_factor = np.sin(self.ue.az_angle) * np.sin(self.bs.el_angle)[np.newaxis]
+        phase_shift_ru = self.freqs[np.newaxis].T * (d_ru - (r_k @ self.ris.el_pos).T)[np.newaxis].reshape((self.ris.num_els, 1, self.ue.n))
+        phase_shift_br = self.freqs[np.newaxis].T * np.tile((d_br - r_b @ self.ris.el_pos)[np.newaxis].T, (1, self.RBs, self.ue.n))
         # delta_psi_ue = self.wavenumber * (r_k @ self.ris.el_pos)
         # delta_psi_bs = self.wavenumber * (r_b @ self.ris.el_pos)
-        self.ris_array_factor = np.sum(self.ris.actual_conf * np.exp(1j * (delta_psi_ue + delta_psi_bs)), axis=1)
+        self.ris_array_factor = np.sum(self.ris.actual_conf[np.newaxis, np.newaxis].T * np.exp(- 1j * 2 * np.pi / speed_of_light * (phase_shift_ru + phase_shift_br)), axis=0)
         # Overall
-        fad = fading(typ=self.reflective_channel, dim=pl_ru.shape)
-        self.h_ris = self.ris_array_factor * pos_factor * fad * np.sqrt(10 ** (-pl_ru / 10))
+        small_fad_ru = fading(typ=self.reflective_channel, dim=(self.RBs, self.ue.n))
+        large_fad_ru = np.tile(db2lin(-pl_ru), (self.RBs, 1))
+        self.h_ris = self.ris_array_factor * pos_factor * small_fad_ru * np.sqrt(large_fad_ru)
         return self.h_dir + self.h_ris
 
 

@@ -120,6 +120,12 @@ def thermal_noise(bandwidth, noise_figure=3, t0=293):
 
 
 # Utilities
+def lin2dB(lin):
+    return 10 * np.log10(lin)
+
+def db2lin(db):
+    return 10 ** (db / 10)
+
 def dbm2watt(dbm):
     """Simply converts dBm to Watt"""
     return 10 ** (dbm / 10 - 3)
@@ -187,20 +193,63 @@ def spher2cart(pos: np.array):
 
 
 # Print scenarios
-def printplot(render: bool = False, title: str = '', filename: str = '', dirname: str = ''):
-    if not render:
-        plt.title(title)
-        plt.show(block=False)
-    else:
-        filename = os.path.join(dirname, filename)
+def printplot(fig: plt.Figure,
+              ax: plt.Axes or np.array,
+              render: bool = False,
+              filename: str = '',
+              dirname: str = '',
+              title: str = None,
+              labels: list = None):
+    if isinstance(ax, plt.Axes):
+        ax.grid(axis='both')
         try:
-            tikzplotlib.clean_figure()
-        except ValueError:
+            ax.set_xlabel(labels[0])
+            ax.set_ylabel(labels[1])
+            ax.set_ylabel(labels[2])
+        except (TypeError, IndexError):
             pass
-        tikzplotlib.save(filename + '.tex')
-        plt.title(title)
-        plt.savefig(filename + '.png', dpi=300)
-        plt.close()
+        if ax.get_legend_handles_labels()[1]:   # Is there is at least a label, print the legend
+            ax.legend()
+        if not render:
+            ax.set_title(title)
+            fig.show()
+        else:
+            filename = os.path.join(dirname, filename)
+            ax.set_title(title)
+            fig.savefig(filename + '.jpg', dpi=300)
+            ax.set_title('')
+            # try:
+            #     tikzplotlib.clean_figure()
+            # except ValueError:
+            #     pass
+            tikzplotlib.save(filename + '.tex')
+            return
+    else:
+        if ax[0].get_legend_handles_labels()[1]:  # Is there is at least a label, print the legend
+            ax[0].legend()
+        for a in ax:
+            a.grid(axis='both')
+        try:
+            ax[-1].set_xlabel(labels[0])
+            for i, a in enumerate(ax):
+                a.set_ylabel(labels[i+1])
+        except (TypeError, IndexError):
+            pass
+        if not render:
+            ax[0].set_title(title)
+            fig.show()
+        else:
+            filename = os.path.join(dirname, filename)
+            ax[0].set_title(title)
+            fig.savefig(filename + '.jpg', dpi=300)
+            ax[0].set_title('')
+            # try:
+            #     tikzplotlib.clean_figure()
+            # except ValueError:
+            #     pass
+            tikzplotlib.save(filename + '.tex')
+
+
 
 def standard_output_dir(subdirname: str) -> str:
     # LaTeX type definitions
