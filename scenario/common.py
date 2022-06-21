@@ -191,6 +191,66 @@ def spher2cart(pos: np.array):
     z = pos[:, 0] * np.cos(pos[:, 1])
     return np.vstack((x, y, z)).T
 
+class Position:
+    # TODO: see if you can subclass numpy
+    """Wrapper for position vectors. Generally a K x 3 vector, where K is the number of points."""
+    def __init__(self, cartesian: np.array = None, cylindrical: np.array = None, spherical: np.array = None):
+        """Constructor of the class.
+
+        :param cartesian: np.array (K,3) representing the 3D Cartesian coordinates of K points.
+        :param cylindrical: np.array (K,3) representing the 3D cylindrical coordinates of K points.
+        :param spherical: np.array (K,3) representing the 3D spherical coordinates of K points.
+        """
+        if cartesian is not None:
+            self._pos = cartesian
+        elif cylindrical is not None:
+            self._pos = cyl2cart(cylindrical)
+        elif spherical is not None:
+            self._pos = spher2cart(spherical)
+        else:
+            raise ValueError('No input has been provided.')
+
+    @property
+    def cart(self):
+        """ Output cylindrical coordinates."""
+        return self._pos
+
+    @property
+    def cyl(self):
+        """ Output cylindrical coordinates."""
+        rho = np.sqrt(self._pos[:, 0] ** 2 + self._pos[:, 1] ** 2)
+        phi = np.arctan2(self._pos[:, 1], self._pos[:, 0])
+        z = self._pos[:, 2]
+        return np.vstack((rho, phi, z)).T
+
+    @property
+    def sph(self):
+        """ Output spherical coordinates."""
+        rho = np.sqrt(self._pos[:, 0] ** 2 + self._pos[:, 1] ** 2)
+        phi = np.arctan2(self._pos[:, 1], self._pos[:, 0])
+        theta = np.arccos(self._pos[:, 2] / rho)
+        return np.vstack((rho, theta, phi)).T
+
+    @property
+    def norm(self):
+        return np.linalg.norm(self._pos, axis=-1)
+
+    @property
+    def cartver(self):
+        return (self.cart.T / self.norm).T    # transpose operation needed to obtain K x 3 vector
+
+    @property
+    def cylver(self):
+        return (self.cyl.T / self.norm).T  # transpose operation needed to obtain K x 3 vector
+
+    @property
+    def sphver(self):
+        return (self.sph.T / self.norm).T  # transpose operation needed to obtain K x 3 vector
+
+
+    def __repr__(self):
+        return self._pos.__repr__()
+
 
 # Print scenarios
 def printplot(fig: plt.Figure,
@@ -201,7 +261,7 @@ def printplot(fig: plt.Figure,
               title: str = None,
               labels: list = None):
     if isinstance(ax, plt.Axes):
-        ax.grid(axis='both')
+        ax.grid(axis='both', color='#E9E9E9', linestyle='--', linewidth = 0.8)
         try:
             ax.set_xlabel(labels[0])
             ax.set_ylabel(labels[1])
@@ -252,10 +312,10 @@ def printplot(fig: plt.Figure,
 
 
 def standard_output_dir(subdirname: str) -> str:
-    # LaTeX type definitions
-    rc('font', **{'family': 'sans serif', 'serif': ['Computer Modern']})
-    rc('text', usetex=True)
-    output_dir = os.path.join(os.path.expanduser('~'), 'OneDrive/plots', subdirname, str(date.today()))
+    subdir = os.path.join(os.path.expanduser('~'), 'OneDrive/plots', subdirname)
+    if not os.path.exists(subdir):
+        os.mkdir(subdir)
+    output_dir = os.path.join(subdir, str(date.today()))
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
     return output_dir
