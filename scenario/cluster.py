@@ -2,7 +2,7 @@
 # filename "cells.py"
 
 import numpy as np
-import scenario.common as common
+import scenario.common as cmn
 from scenario.common import cluster_shapes, circular_uniform, semicircular_uniform, cyl2cart, cart2cyl, fading, db2lin
 from scenario.nodes import UE, BS, RIS
 import matplotlib.pyplot as plt
@@ -45,6 +45,10 @@ class Cluster:
             y_size = x_size
         else:
             assert x_size >= y_size, f'Error in size definition: min_size must be <= max_size'
+
+        # Common print options with LaTeX type definitions
+        rc('font', **{'family': 'sans serif', 'serif': ['Computer Modern']})
+        rc('text', usetex=True)
 
         # Physical attributes
         self.shape = shape
@@ -272,12 +276,13 @@ class Cluster:
 
     def build_channels(self):
         """Build channels depending"""
+        # TODO: save static values so you can compute only a part, reducing the time
         # TODO: control for input using try for the various cases
         # TODO: SIONNA.
         # Common values
         gain = self.bs.gain + self.ue.gain
         # Direct channel
-        d_bu = np.linalg.norm(self.bs.pos - self.ue.pos, axis=1)[np.newaxis]
+        d_bu = np.linalg.norm(self.bs.pos.cart - self.ue.pos.cart, axis=1)[np.newaxis]
         # Path loss
         pl_bu = 20 * np.log10(4 * np.pi / self.wavelength) - gain + 10 * self.pl_exponent * np.log10(d_bu)
         # TODO: create a function with all the pl computations
@@ -287,21 +292,18 @@ class Cluster:
         self.h_dir = small_fad_bu * np.sqrt(large_fad_bu) * np.exp(- 1j * phase_shift_bu)
 
         # reflective channel
-        d_br = np.linalg.norm(self.bs.pos - self.ris.pos, axis=1)
-        d_ru = np.linalg.norm(self.ris.pos - self.ue.pos, axis=1)[np.newaxis]
+        d_br = np.linalg.norm(self.bs.pos.cart - self.ris.pos.cart, axis=1)
+        d_ru = np.linalg.norm(self.ris.pos.cart - self.ue.pos.cart, axis=1)[np.newaxis]
         # Path loss
         pl_ru = 20 * np.log10(4 * np.pi) - gain - 20 * np.log10(self.ris.dist_els_h * self.ris.dist_els_v) + 20 * np.log10(d_br * d_ru)
         # TODO: what happens if RIS is not in the origins? There is the rotation matrix!
-        # positioning versors
-        r_k = (self.ue.pos.T/d_ru).T    # transpose operation needed to obtain K x 3 vector
-        r_b = (self.bs.pos.T/d_br).T    # transpose operation needed to obtain B x 3 vector
         # phases
-        pos_factor = np.sin(self.ue.az_angle) * np.sin(self.bs.el_angle)[np.newaxis]
-        phase_shift_ru = self.freqs[np.newaxis].T * (d_ru - (r_k @ self.ris.el_pos).T)[np.newaxis].reshape((self.ris.num_els, 1, self.ue.n))
-        phase_shift_br = self.freqs[np.newaxis].T * np.tile((d_br - r_b @ self.ris.el_pos)[np.newaxis].T, (1, self.RBs, self.ue.n))
-        # delta_psi_ue = self.wavenumber * (r_k @ self.ris.el_pos)
-        # delta_psi_bs = self.wavenumber * (r_b @ self.ris.el_pos)
+        pos_factor = np.sin(self.ue.pos.sph[:, 2]) * np.sin(self.bs.pos.sph[:, 1])[np.newaxis]
+        phase_shift_ru = self.freqs[np.newaxis].T * (d_ru - (self.ue.pos.cartver @ self.ris.el_pos).T)[np.newaxis].reshape((self.ris.num_els, 1, self.ue.n))
+        phase_shift_br = self.freqs[np.newaxis].T * np.tile((d_br - self.bs.pos.cartver @ self.ris.el_pos)[np.newaxis].T, (1, self.RBs, self.ue.n))
         self.ris_array_factor = np.sum(self.ris.actual_conf[np.newaxis, np.newaxis].T * np.exp(- 1j * 2 * np.pi / speed_of_light * (phase_shift_ru + phase_shift_br)), axis=0)
+        # window = np.tile(np.hamming(self.ris.num_els_h), self.ris.num_els_v)[np.newaxis, np.newaxis].T
+        # self.ris_array_factor = np.sum(window * self.ris.actual_conf[np.newaxis, np.newaxis].T * np.exp(- 1j * 2 * np.pi / speed_of_light * (phase_shift_ru + phase_shift_br)), axis=0)
         # Overall
         small_fad_ru = fading(typ=self.reflective_channel, dim=(self.RBs, self.ue.n))
         large_fad_ru = np.tile(db2lin(-pl_ru), (self.RBs, 1))
@@ -312,11 +314,8 @@ class Cluster:
     def plot_scenario(self, render: bool = False, *args):
         """This method will plot the scenario of communication
         """
-        # LaTeX type definitions
-        rc('font', **{'family': 'sans serif', 'serif': ['Computer Modern']})
-        rc('text', usetex=True)
         # Open axes
-        _, ax = plt.subplots()
+        fig, ax = plt.subplots()
 
         # Displacement value
         delta = self.x_size / 100
@@ -339,22 +338,20 @@ class Cluster:
         ax.add_patch(shape)
         # User positioning
         # BS
-        plt.scatter(self.bs.pos[:, 0], self.bs.pos[:, 1], c=common.node_color['BS'], marker=common.node_mark['BS'], label='BS')
+        ax.scatter(self.bs.pos.cart[:, 0], self.bs.pos.cart[:, 1], c=cmn.node_color['BS'], marker=cmn.node_mark['BS'], label='BS')
         # plt.text(self.bs.pos[:, 0], self.bs.pos[:, 1] + delta, s='BS', fontsize=10)
         # UE
-        plt.scatter(self.ue.pos[:, 0], self.ue.pos[:, 1], c=common.node_color['UE'], marker=common.node_mark['UE'], label='UE')
+        ax.scatter(self.ue.pos.cart[:, 0], self.ue.pos.cart[:, 1], c=cmn.node_color['UE'], marker=cmn.node_mark['UE'], label='UE')
         for k in np.arange(self.ue.n):
-            plt.text(self.ue.pos[k, 0], self.ue.pos[k, 1] + delta, s=f'{k}', fontsize=10)
+            ax.text(self.ue.pos.cart[k, 0], self.ue.pos.cart[k, 1] + delta, s=f'{k}', fontsize=10)
         # RIS
-        plt.scatter(self.ris.pos[:, 0], self.ris.pos[:, 1], c=common.node_color['RIS'], marker=common.node_mark['RIS'], label='RIS')
+        ax.scatter(self.ris.pos.cart[:, 0], self.ris.pos.cart[:, 1], c=cmn.node_color['RIS'], marker=cmn.node_mark['RIS'], label='RIS')
         # plt.text(self.ris.pos[:, 0], self.ris.pos[:, 1] + delta, s='RIS', fontsize=10)
         # Set axis
-        ax.set_xlabel('$x$ [m]')
-        ax.set_ylabel('$y$ [m]')
         # Legend
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = OrderedDict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys())
         # Finally
-        plt.grid(color='#E9E9E9', linestyle='--', linewidth=0.5)
-        common.printplot(render, filename=args[0], dirname=args[1])
+        cmn.printplot(fig, ax, render, filename=args[0], dirname=args[1], labels=['$x$ [m]', '$y$ [m]'])
+
