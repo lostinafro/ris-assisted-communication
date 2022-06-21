@@ -2,8 +2,7 @@
 # filename "nodes.py"
 
 import numpy as np
-from scenario.common import spher2cart, cart2spher
-from scipy.constants import speed_of_light
+from scenario.common import Position
 
 
 
@@ -29,7 +28,7 @@ class Node:
 
         # Set attributes
         self.n = n
-        self.pos = pos
+        self.pos = Position(pos)
         self.gain = gain
         self.max_pow = max_pow
 
@@ -60,11 +59,6 @@ class BS(Node):
         # Init parent class
         super().__init__(n, pos, gain, max_pow)
 
-        # Spherical coordinate from the origin
-        self.distance = np.linalg.norm(self.pos, axis=-1)
-        self.az_angle = np.arctan2(self.pos[:, 1], self.pos[:, 0])
-        self.el_angle = np.arccos(self.pos[:, 2] / self.distance)
-
     def __repr__(self):
         return f'BS-{self.n}'
 
@@ -93,11 +87,6 @@ class UE(Node):
 
         # Init parent class
         super().__init__(n, pos, gain, max_pow)
-
-        # Spherical coordinate from the origin
-        self.distance = np.linalg.norm(self.pos, axis=-1)
-        self.az_angle = np.arctan2(self.pos[:, 1], self.pos[:, 0])
-        self.el_angle = np.arccos(self.pos[:, 2] / self.distance)
 
     def __repr__(self):
         return f'UE-{self.n}'
@@ -179,12 +168,11 @@ class RIS(Node):
     def array_factor(self, pos_transmitters: np.array, pos_receivers: np.array, wavelength: float, ):
         pass
 
-    def set_std_configuration(self, wavenumber, index, bs_pos: np.array = np.array([0, 10, 0])):
+    def set_std_configuration(self, wavenumber, index, bs_pos: Position = Position(np.array([0, 10, 0]))):
         """Create the phase profile from codebook compensating the bs position and assuming attenuation 0"""
         # compensating bs
-        bs_pos_spher = cart2spher(bs_pos)
-        phase_bs_h = np.cos(bs_pos_spher[:, 2]) * np.sin(bs_pos_spher[:, 1])
-        phase_bs_v = np.cos(bs_pos_spher[:, 1])
+        phase_bs_h = np.cos(bs_pos.sph[:, 2]) * np.sin(bs_pos.sph[:, 1])
+        phase_bs_v = np.cos(bs_pos.sph[:, 1])
         # Set standard configuration
         phase_conf_h = self.std_configs[index]
         phase_conf_v = 0
@@ -192,14 +180,13 @@ class RIS(Node):
         phase_conf_tot = (self.num_els_h + 1) / 2 * self.dist_els_h * (phase_conf_h + phase_bs_h) + (self.num_els_v + 1) / 2 * self.dist_els_v * (phase_conf_v + phase_bs_v)
         # Put all together
         self.actual_conf = np.exp(1j * wavenumber * (phase_conf_tot - self.m * self.dist_els_h * (phase_conf_h + phase_bs_h) - self.n * self.dist_els_v * (phase_conf_v + phase_bs_v)))
-        return self.actual_conf, phase_conf_h + phase_bs_h, phase_conf_v + phase_bs_v
+        return self.actual_conf     #, phase_conf_h + phase_bs_h, phase_conf_v + phase_bs_v
 
-    def set_configuration(self, wavenumber, configuration_angle, bs_pos: np.array = np.array([0, 10, 0])):
+    def set_configuration(self, wavenumber, configuration_angle, bs_pos: Position = Position(np.array([0, 10, 0]))):
         """Create the phase profile from codebook compensating the bs position and assuming attenuation 0"""
         # compensating bs
-        bs_pos_spher = cart2spher(bs_pos)
-        phase_bs_h = np.cos(bs_pos_spher[:, 2]) * np.sin(bs_pos_spher[:, 1])
-        phase_bs_v = np.cos(bs_pos_spher[:, 1])
+        phase_bs_h = np.cos(bs_pos.sph[:, 2]) * np.sin(bs_pos.sph[:, 1])
+        phase_bs_v = np.cos(bs_pos.sph[:, 1])
         # Set specific configuration
         phase_c_h = np.cos(configuration_angle)
         phase_c_v = 0
@@ -209,6 +196,8 @@ class RIS(Node):
 
     def __repr__(self):
         return f'RIS-{self.n}'
+
+    # TODO: print method for visualize the RIS
 
 
     # def set_angular_resolution(self):
